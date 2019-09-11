@@ -1,0 +1,300 @@
+---
+title: "Predicting Consumer Behavior During Black Friday Season"
+author: "Qiao Han/Shpakova Anastasiya/Shuangmu Feng/Yucheng Zhang"
+date: "2019/4/24"
+output: slidy_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+
+```{r libraries, echo=FALSE, warning=FALSE}
+library(prettydoc)
+library(DT)
+library(bazar)
+library(caret)
+library(DT)
+library(class)
+library(e1071)
+library(flexdashboard)
+library(gbm)
+library(ggplot2)
+library(glmnet)
+library(Hmisc)
+library(knitr)
+library(neuralnet)
+library(nnet)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(rmarkdown)
+library(shiny)
+library(xgboost)
+library(data.table)
+
+user.name <- "User_ID"
+prod.id.name <- "Product_ID"
+gender.name <- "Gender"
+age.name <- "Age"
+occ.name <- "Occupation"
+city.cat.name <- "City_Category"
+stay.name <- "Stay_In_Current_City_Years"
+married.name <- "Marital_Status"
+prod.1.name <- "Product_Category_1"
+prod.2.name <- "Product_Category_2"
+prod.3.name <- "Product_Category_3"
+purchase.name <- "Purchase"
+
+```
+
+```{r functions}
+round.numerics <- function(x, digits){
+  if(is.numeric(x)){
+    x <- round(x = x, digits = digits)
+  }
+  return(x)
+}
+
+```
+
+## Predicting Consumer Behavior During Black Friday Season
+
+
+
+
+###Source of our data
+ 
+A copy of or link to the data you plan to use
+https://www.kaggle.com/mehdidag/black-friday
+
+## Data Introduction
+###A short description (one paragraph) of the data
+The dataset contains 12 columns and 537,578 rows. Our goal is to predict the consumer spending (dollar amount, our dependent variable) and identify purchasing patterns (if any) using various machine learning techniques covered in class. The independent variables provided in the dataset characterize the consumer and describe their purchasing behavior during the shopping season. They include: ID, age, gender occupation and other demographic data, as well as information such as current city they stayed and how long they have been here. It also has the information covering the category of products purchased.
+
+## Introduction to Data
+```{r,echo=TRUE}
+dat <- fread("BlackFriday.csv")
+dim(dat)
+datatable(head(dat))
+
+```
+
+## Introduction to Data
+```{r, echo = TRUE}
+names(dat)
+
+```
+## Data Processing
+
+- Data Cleaning
+- Exploratory Data Analysis
+- Analysis / Modeling Stage
+- Conclusion
+```{r}
+
+
+
+```
+## Data Cleaning
+- Cleaning (get the new refined dataset)
+- Filter data for Top 10 products (~15K rows)
+- N/A: replace all N/A with 0 (product cat 2 and 3) 
+- Convert age, gender and city to 1, 2, 3
+- Stay_In_Current_City_Years - convert 4+ to 4 
+- Ignore the Product Category columns 1-3 (drop)
+
+
+## Exploratory Data Analysis
+
+##Age Status
+```{r EDA_age,warning = FALSE}
+age.eda <- dat[,.N,by= age.name]
+age_vis = ggplot(data = age.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = Age, y = N, fill = Age)) +
+                      labs(title = 'Age of Customers') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="right")
+print(age_vis)
+```
+
+##City and Gender Status
+```{r EDA_city & gender, warning=FALSE}
+city.gender <- dat[,.(`purchase`=sum(Purchase)),by=c(city.cat.name,gender.name)]
+
+city.gender.eda <- setorderv(x=city.gender,cols=c(city.cat.name,"purchase"),order = 1)
+
+city.gender.eda_vis = ggplot(data = city.gender.eda) + 
+                      geom_bar(position="dodge", color = 'white', stat = 'identity', mapping = aes(x = City_Category, y =`purchase`, fill = Gender)) +
+                      labs(title = "Women and men's purchase in different cities") +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="right")
+print(city.gender.eda_vis)
+
+```
+
+##City and Age
+```{r EDA_city & age, warning=FALSE}
+city.age <- dat[,.(`purchase`=sum(Purchase)),by=c(city.cat.name,age.name)]
+
+city.age.eda <- setorderv(x=city.age,cols=c(city.cat.name,age.name),order = 1)
+
+city.age.eda_vis = ggplot(data = city.age.eda) + 
+                      geom_bar(position="dodge", color = 'white', stat = 'identity', mapping = aes(x = City_Category, y =`purchase`, fill = Age)) +
+                      labs(title = "Different age group's purchase in different cities") +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="right")
+print(city.age.eda_vis)
+
+```
+##Gender Status
+```{r EDA_gender, warning=FALSE}
+gender.eda <- dat[,.N,by= gender.name]
+gender_vis = ggplot(data = gender.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = Gender, y = N, fill = Gender)) +
+                      labs(title = 'Gender of Customers') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="right")
+print(gender_vis)
+```
+
+##Marital Status
+```{r, warning=FALSE}
+mar.eda <- dat[,.N,by= married.name]
+mar_vis = ggplot(data = mar.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = Marital_Status, y = N, fill = Marital_Status)) +
+                      labs(title = 'Gender of Customers') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      
+                      theme(legend.position="none")
+print(mar_vis)
+```
+
+##Purchase By Gender
+```{r EDA_top10 products purchase & gender, warning=FALSE}
+subdat <-dat[,.(Number=.N),by=prod.id.name]
+sortsub <-setorderv(x=subdat,cols="Number",order = -1)[1:10]
+dat1 <- dat[get(prod.id.name)%in%sortsub$Product_ID] #sub dataset with only top10 pupular products
+
+
+popprod.pur.gender <- dat1[,.(`Popular products purchase`=sum(Purchase)),by=c(prod.id.name,gender.name)]
+
+popprod.pur.gender.eda <- setorderv(x=popprod.pur.gender,cols=c(prod.id.name,"Popular products purchase"),order = 1)
+
+popprod.pur.gender.eda_vis = ggplot(data = popprod.pur.gender.eda) + 
+                      geom_bar(position="dodge",color = 'white', stat = 'identity', mapping = aes(x = Product_ID, y =`Popular products purchase`, fill = Gender)) +
+                      labs(title = 'Top 10 popular products purchase amount & gender') +
+                      theme(axis.text.x = element_text(size = 5)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="right")
+print(popprod.pur.gender.eda_vis)
+```
+
+##Top ten Purchase by City
+```{r EDA_top10 products purchase & city, warning=FALSE}
+popprod.pur.city <- dat1[,.(`Popular products purchase`=sum(Purchase)),by=c(prod.id.name,city.cat.name)]
+
+popprod.pur.city.eda <- setorderv(x=popprod.pur.city,cols=c(prod.id.name,"Popular products purchase"),order = 1)
+
+popprod.pur.city.eda_vis = ggplot(data = popprod.pur.city.eda) + 
+                      geom_bar(position="dodge",color = 'white', stat = 'identity', mapping = aes(x = Product_ID, y =`Popular products purchase`, fill = City_Category)) +
+                      labs(title = 'Top 10 popular products purchase amount & city') +
+                      theme(axis.text.x = element_text(size = 7)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="right")
+print(popprod.pur.city.eda_vis)
+```
+
+##Top Ten Purchase by Age
+```{r EDA_top10 products purchase & age, warning=FALSE}
+popprod.pur.age <- dat1[,.(`Popular products purchase`=sum(Purchase)),by=c(prod.id.name,age.name)]
+
+popprod.pur.age.eda <- setorderv(x=popprod.pur.age,cols=c(prod.id.name,"Popular products purchase"),order = 1)
+
+popprod.pur.age.eda_vis = ggplot(data = popprod.pur.age.eda) + 
+                      geom_bar(position="dodge", color = 'grey', stat = 'identity', mapping = aes(x = Product_ID, y =`Popular products purchase`, fill = Age)) +
+                      labs(title = 'Top 10 popular products purchase amount & age') +
+                      theme(axis.text.x = element_text(size = 7)) +
+                      scale_fill_brewer(palette = 'Set3') +
+                      theme(legend.position="right")
+print(popprod.pur.age.eda_vis)
+```
+
+##Purchase By Age
+```{r,warning= FALSE}
+age.purchase.eda= dat[,.(N = sum(Purchase)),by = age.name]
+
+
+
+age_purchase_vis = ggplot(data = age.purchase.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = Age, y = N, fill = Age)) +
+                      labs(title = 'Purchase and Age of Customers') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="none")
+print(age_purchase_vis)
+
+
+
+```
+
+
+##Purchase by City
+```{r,warning = FALSE}
+city.purchase.eda= dat[,.(N = sum(Purchase)),by = city.cat.name]
+
+
+
+city_purchase_vis = ggplot(data = city.purchase.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = City_Category, y = N, fill = City_Category)) +
+                      labs(title = 'Purchase and City of Customers') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="none")
+print(city_purchase_vis)
+
+
+```
+
+## Modeling - Data Cleaning
+```{r datacleans, echo = FALSE}
+newdat <- dat[,.(sumpur = sum(Purchase,na.rm = TRUE)), by = 'User_ID']
+dim(newdat)[1] == length(unique(dat$User_ID))
+tab <- table(dat$User_ID)
+for(i in 2:length(tab)){
+  tab[i] <- tab[i-1] + tab[i]
+}
+setorderv(dat,cols = 'User_ID',order = 1)
+infograb <- dat[tab,]
+new.dat <- cbind(infograb[,c(1,3:8)],newdat[,2])
+head(new.dat)
+backup <- copy(new.dat)
+new.dat[,Gen:= 1*(Gender =="M")]#male count as 1
+new.dat[,Age17:= 1*(Age =="0-17")]
+new.dat[,Age25:= 1*(Age =="18-25")]
+new.dat[,Age35:= 1*(Age =="26-35")]
+new.dat[,Age45:= 1*(Age =="36-45")]
+new.dat[,Age55:= 1*(Age =="51-55")]
+new.dat[,CityA:= 1*(City_Category == "A")]
+new.dat[,CityB:= 1*(City_Category == "B")]
+new.dat$Stay_In_Current_City_Years[new.dat$Stay_In_Current_City_Years=="4+"] <- "4"
+head(new.dat)
+new.dat[,Gender:= NULL]
+new.dat[,Age:= NULL]
+new.dat[,City_Category:= NULL]
+new.dat[,User_ID:= NULL]
+head(new.dat)
+```
+
+## Slide with Plot
+
+```{r pressure}
+plot(pressure)
+```
+

@@ -1,0 +1,615 @@
+---
+title: "Predicting Consumer Behavior During Black Friday Season"
+author: "Qiao Han/Shpakova Anastasiya/Shuangmu Feng/Yucheng Zhang"
+date: "2019/4/24"
+output: slidy_presentation
+footer: "Applied Data Science - Team U"
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+
+```{r libraries, echo=FALSE, warning=FALSE, include=FALSE}
+#install.packages("pROC")
+library(prettydoc)
+library(DT)
+library(bazar)
+library(caret)
+library(DT)
+library(class)
+library(e1071)
+library(flexdashboard)
+library(gbm)
+library(ggplot2)
+library(glmnet)
+library(Hmisc)
+library(knitr)
+library(neuralnet)
+library(nnet)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(rmarkdown)
+library(shiny)
+library(xgboost)
+library(data.table)
+library(ModelMetrics)
+library(png)
+library(grid)
+library(pROC)
+user.name <- "User_ID"
+prod.id.name <- "Product_ID"
+gender.name <- "Gender"
+age.name <- "Age"
+occ.name <- "Occupation"
+city.cat.name <- "City_Category"
+stay.name <- "Stay_In_Current_City_Years"
+married.name <- "Marital_Status"
+prod.1.name <- "Product_Category_1"
+prod.2.name <- "Product_Category_2"
+prod.3.name <- "Product_Category_3"
+purchase.name <- "Purchase"
+
+```
+
+```{r functions}
+round.numerics <- function(x, digits){
+  if(is.numeric(x)){
+    x <- round(x = x, digits = digits)
+  }
+  return(x)
+}
+
+```
+
+## Predicting Consumer Behavior During Black Friday Season
+
+###Source of our data
+ 
+A copy of or link to the data you plan to use
+https://www.kaggle.com/mehdidag/black-friday
+
+![A Typical Black Friday Situation](/Users/Yuhang's laogong/Desktop/2019/5243/final project/BF.png)
+
+## Introduction
+
+- The dataset
+    + Data collected from a retail store during Black Friday month
+    + High degree of anonymity maintained - many details are hidden!
+- Independent variables
+    + Product info: product IDs (masked), category of products purchased (masked)
+    + Basic demographic data: age, gender, marital status, occupation (masked), type of current city (masked), length of staying in their city
+- Our goal is to predict how much a given consumer will spend during Black Friday season
+    + Approach 1: Dependent variable: Spending Amount Bucket (split at the median) for Total Purchase by Unique Consumer  
+    + Approach 2: Dependent variable: Individual Purchase Amount based on Consumer Info (product and consumer ID hidden)  
+
+
+## Qick Look at the Dataset
+```{r,echo=FALSE}
+# change the path 
+dat <- fread("BlackFriday.csv")
+dim(dat)
+datatable(head(dat), rownames = FALSE)
+```
+Data dimensions: `r nrow(dat)` rows x `r ncol(dat)`
+
+
+## Our Strategy
+
+I.   Exploratory Data Analysis
+II.  Data Cleaning
+III. Analysis / Modeling Stage
+IV.  Conclusion
+
+
+## I. Exploratory Data Analysis
+A. Simple Statistics
+B. Population Distribution 
+
+
+## EDA: Count Unique Instances of Variables
+```{r}
+count.unique <- function(x){
+  return(length(unique(x)))
+}
+
+counts.dat <- dat[, lapply(X = .SD, FUN = "count.unique")]
+datatable(t(counts.dat), rownames=T)
+```
+
+
+## A. Simple Statistics
+- The dataset represents to `r dat[, length(unique(user.name))]` respondents and covers `r dat[, length(unique(prod.id.name))]` unique products.
+- The total amount of spending was 5,017,668,378 of unknown currency `r sum(as.numeric(dat[,Purchase]))`
+- Mean individual purchase of `r dat[,mean(Purchase)]` 
+- Highest maximum amount spent on individual purchase of 23,961 of unknown currency
+- Highest total amount spent by one user: 10,536,783 of unknown currency
+- Highest number of items bought: 1,025
+- We chose to calculate Aggregate Purchase over observation period for EDA
+```{r, echo=FALSE}
+#Total Money spent by indl user
+stats.by.user <- dat[,.(N_Purchases = .N,
+                        Mean = mean(Purchase), 
+                        Max = max(Purchase), 
+                        Sum = sum(Purchase)), 
+                     by=User_ID]
+
+stats.by.user <- stats.by.user[,lapply(X=.SD, FUN = "round.numerics", digits=2)]
+setorderv(stats.by.user, 'Sum', -1)
+datatable(stats.by.user, rownames=FALSE)
+
+#sum(as.numeric(dat[,Purchase]))
+```
+
+ 
+```{r, echo=FALSE}
+### DT for unique ppl 
+# Aggregate amount of purchase  
+total.purchase <- dat[,.(sumpur = sum(Purchase,na.rm = TRUE)), by = 'User_ID']
+
+#Select demographic characteristics 
+dat.unique <- dat[,1:8]
+dat.unique <- unique(dat.unique, by = "User_ID")
+
+#Merge
+dat.m <- merge(dat.unique, total.purchase, by ="User_ID")
+```
+
+## B. Population Distribution 
+
+## Age Status
+```{r EDA_age,warning = FALSE}
+
+
+scaleFUN <- function(x) sprintf("%.1fM", x/1000000)
+
+age.eda <- dat.m[,.N,by= age.name]
+age_vis = ggplot(data = age.eda) + 
+                      geom_bar(color = 'black', stat = 'identity', mapping = aes(x = Age, y = N, fill = Age)) + 
+                      labs(title = 'Age of Customers') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Spectral') +
+                      xlab("Age") + ylab("Number") +
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white")
+                            )
+print(age_vis)
+```
+
+## Gender Distribution
+```{r EDA_gender, warning=FALSE}
+gender.eda <- dat.m[,.N,by= gender.name]
+gender_vis = ggplot(data = gender.eda) + 
+                      geom_bar(color = 'black', stat = 'identity', mapping = aes(x = Gender, y = N, fill = Gender)) +
+                      labs(title = 'What Gender are the Customers in this Dataset?') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Set1') +
+                      xlab("Gender") + ylab("Number of Customers") +
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white")
+                            )
+print(gender_vis)
+```
+
+## Marital Status Distribution
+```{r, warning=FALSE}
+mar.eda <- dat.m[,.N,by= married.name]
+
+mar_vis = ggplot(data = mar.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', 
+                      mapping = aes(x = Marital_Status, y = N, fill = Marital_Status)) +
+                      labs(title = 'How Many of the Customers are Married?') +
+                      theme(axis.text.x = element_text(size = 10), legend.position = "none") +
+                      theme(panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                           
+                      )
+print(mar_vis)
+```
+
+## Average Purchase Amount by City and Gender Status
+```{r EDA_city & gender, warning=FALSE}
+city.gender <- dat.m[,.(`purchase`=mean(sumpur)),by=c(city.cat.name,gender.name)]
+city.gender.eda <- setorderv(x=city.gender,cols=c(city.cat.name,"purchase"),order = 1)
+
+city.gender.eda_vis = ggplot(data = city.gender.eda) + 
+                      geom_bar(position="dodge", color = 'black', stat = 'identity', 
+                               mapping = aes(x = City_Category, y =`purchase`, fill = Gender)) +
+                      labs(title = "Women vs. Men: What is the average purchase amount in each city type?") +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Set1') +
+                      xlab("City Type") + ylab("Average Amount Spent") + 
+                      scale_y_continuous(labels = scaleFUN) + 
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                      )
+print(city.gender.eda_vis)
+
+# city.gender
+city.gender.eda
+# dat.m[Gender=="F" & City_Category == 'A', mean(sumpur)] #1,018,343
+# dat.m[Gender=="F" & City_Category == 'A', sum(sumpur)]  #300,411,276
+# dat[User_ID =='1004277' , sum(Purchase)] #978 purchases #10,536,783 10M+ spent 
+```
+
+## Distribution of Sending By Age
+```{r,warning= FALSE}
+age.purchase.eda= dat.m[,.(N = sum(sumpur)),by = age.name]
+
+age_purchase_vis = ggplot(data = age.purchase.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = Age, y = N, fill = Age)) +
+                      labs(title = 'Which Age Group Spends Most?') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      xlab("Age Group") + ylab("Amount Spent") + 
+                      scale_y_continuous(labels = scaleFUN) + 
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                      )
+print(age_purchase_vis)
+```
+
+
+## Distribution of Sending by City Type
+```{r,warning = FALSE}
+city.purchase.eda= dat[,.(N = sum(Purchase)),by = city.cat.name]
+
+city_purchase_vis = ggplot(data = city.purchase.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = City_Category, y = N, fill = City_Category)) +
+                      labs(title = 'Where are Customers Spending Most?') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      xlab("City Type") + ylab("Amount Spent") + 
+                      scale_y_continuous(labels = scaleFUN) + 
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                      )
+print(city_purchase_vis)
+```
+
+## Total Purchase by City and Age Group 
+```{r EDA_city & age, warning=FALSE}
+city.age <- dat[,.(`purchase`=sum(Purchase)),by=c(city.cat.name,age.name)]
+#or city.age <- dat.m[,.(`purchase`=sum(sumpur)),by=c(city.cat.name,age.name)]
+
+city.age.eda <- setorderv(x=city.age,cols=c(city.cat.name,age.name),order = 1)
+
+city.age.eda_vis = ggplot(data = city.age.eda) + 
+                      geom_bar(position="dodge", color = 'black', stat = 'identity', 
+                      mapping = aes(x = City_Category, y =`purchase`, fill = Age)) +
+                      labs(title = "How much are people of different age groups spend in different cities?") +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Spectral') +
+                        xlab("City Type") + ylab("Total Amount Spent") + 
+                      scale_y_continuous(labels = scaleFUN) + 
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                      )
+print(city.age.eda_vis)
+```
+
+
+## Purchase By Gender
+```{r EDA_top10 products purchase & gender, warning=FALSE}
+subdat <-dat[,.(Number=.N),by=prod.id.name]
+sortsub <-setorderv(x=subdat,cols="Number",order = -1)[1:10]
+dat1 <- dat[get(prod.id.name)%in%sortsub$Product_ID] #sub dataset with only top10 pupular products
+popprod.pur.gender <- dat1[,.(`Popular products purchase`=sum(Purchase)),by=c(prod.id.name,gender.name)]
+popprod.pur.gender.eda <- setorderv(x=popprod.pur.gender,cols=c(prod.id.name,"Popular products purchase"),order = 1)
+
+popprod.pur.gender.eda_vis = ggplot(data = popprod.pur.gender.eda) + 
+                      geom_bar(position="dodge",color = 'white', stat = 'identity', mapping = aes(x = Product_ID, y =`Popular products purchase`, fill = Gender)) +
+                      labs(title = 'How Much Did Customer Spent on Top 10 Products (by Volume)?') +
+                      theme(axis.text.x = element_text(size = 5)) +
+                      scale_fill_brewer(palette = 'Set1') +
+                      xlab("Product") + ylab("Amount Spent") + 
+                      scale_y_continuous(labels = scaleFUN) + 
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                      )
+print(popprod.pur.gender.eda_vis)
+
+# sort(sortsub$Product_ID); sort(sortsub2$Product_ID) #P00112142 #69194486
+```
+
+
+
+## Top Ten Purchase by City
+```{r EDA_top10 products purchase & city, warning=FALSE}
+#City type C spends most on top 10 products! Even though their total  and avg spending is less compared to A and B
+
+popprod.pur.city <- dat1[,.(`Popular products purchase`=sum(Purchase)),by=c(prod.id.name,city.cat.name)]
+
+popprod.pur.city.eda <- setorderv(x=popprod.pur.city,cols=c(prod.id.name,"Popular products purchase"),order = 1)
+
+popprod.pur.city.eda_vis = ggplot(data = popprod.pur.city.eda) + 
+                      geom_bar(position="dodge",color = 'black', stat = 'identity', mapping = aes(x = Product_ID, y =`Popular products purchase`, fill = City_Category)) +
+                      labs(title = 'How much do Customers spend on Top 10 Products in each City Type?') +
+                      theme(axis.text.x = element_text(size = 7)) +
+                      scale_fill_brewer(palette = 'Set1') +
+                      xlab("Product") + ylab("Amount Spent") + 
+                      scale_y_continuous(labels = scaleFUN) + 
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                      )
+print(popprod.pur.city.eda_vis)
+
+# dat[get(prod.id.name)=='P00112142', sum(Purchase), by=City_Category]
+# dat[, sum(Purchase), by=City_Category]
+```
+
+## Top Ten Purchase by Age
+```{r EDA_top10 products purchase & age, warning=FALSE}
+popprod.pur.age <- dat1[,.(`Popular products purchase`=sum(Purchase)),by=c(prod.id.name,age.name)]
+
+popprod.pur.age.eda <- setorderv(x=popprod.pur.age,cols=c(prod.id.name,"Popular products purchase"),order = 1)
+
+popprod.pur.age.eda_vis = ggplot(data = popprod.pur.age.eda) + 
+                      geom_bar(position="dodge", color = 'grey', stat = 'identity', mapping = aes(x = Product_ID, y =`Popular products purchase`, fill = Age)) +
+                      labs(title = 'Which Age Group Buys the Top 10 Products Most? ') +
+                      theme(axis.text.x = element_text(size = 7)) +
+                      scale_fill_brewer(palette = 'Set1') +
+                      xlab("Product") + ylab("Amount Spent") + 
+                      scale_y_continuous(labels = scaleFUN) + 
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                      )
+print(popprod.pur.age.eda_vis)
+```
+
+##END of EDA
+
+```{r,eval = FALSE}
+# 
+# percentage.table <- function(x, digits = 1){
+#   tab <- table(x)
+#   percentage.tab <- 100*tab/(sum(tab))
+#   rounded.tab <- round(x = percentage.tab, digits = digits)
+#   return(rounded.tab)
+# }
+# 
+# #ylim=100,
+# #Product_ID=='P00069042',
+# tab<-table(dat.m[,Gender])
+# percentage.tab <- 100*tab/(sum(tab))
+# percentage.tab
+# rounded.tab <- round(x = percentage.tab, digits = 1)
+# rounded.tab
+# 
+rounded.tab
+barplot(height = rounded.tab, space=0.01, las = 1, main = "Distribution of Gender", ylab = "Percentage", xlab = 'Gender',
+         ylim= c(0,100), col = "dodgerblue")
+
+
+
+num <- tab.2[,2]
+num <- t(as.matrix(num))
+barplot(height = num)
+
+
+tab.2 <- dat[, sum(Purchase), by = Age]
+tab.2 <- as.data.frame(tab.2)
+p<-ggplot(data=tab.2, aes(x=Age, y=V1)) + geom_bar(stat="identity")
+print(p)
+#space=0.01, las = 1, main = "Distribution of Gender", ylab = "Percentage", xlab = 'Gender', col = "dodgerblue")
+
+```
+
+
+```{r pressure}
+### Slide with Plot ?? Delete ?? 
+#plot(pressure)
+```
+
+## II. Data Cleaning Stage
+
+## Modeling - Data Cleaning
+- Cleaning (get the new refined dataset)
+- Filter data for Top 10 products (~15K rows)
+- N/A: replace all N/A with 0 (product cat 2 and 3) 
+- Convert age, gender and city to 1, 2, 3
+- Stay_In_Current_City_Years - convert 4+ to 4 
+- Ignore the Product Category columns 1-3 (drop)
+
+```{r datacleans, echo = FALSE}
+newdat <- dat[,.(sumpur = sum(Purchase,na.rm = TRUE)), by = 'User_ID']
+#summary(newdat$sumpur)
+#dim(newdat)[1] == length(unique(dat$User_ID))
+tab <- table(dat$User_ID)
+for(i in 2:length(tab)){
+  tab[i] <- tab[i-1] + tab[i]
+}
+setorderv(dat,cols = 'User_ID',order = 1)
+infograb <- dat[tab,]
+new.dat <- cbind(infograb[,c(1,3:8)],newdat[,2])
+#head(new.dat)
+backup <- copy(new.dat)
+new.dat[,Gen:= 1*(Gender =="M")]#male count as 1
+
+new.dat[,Age17:= 1*(Age =="0-17")]
+new.dat[,Age25:= 1*(Age =="18-25")]
+new.dat[,Age35:= 1*(Age =="26-35")]
+new.dat[,Age45:= 1*(Age =="36-45")]
+new.dat[,Age55:= 1*(Age =="51-55")]
+
+new.dat[,CityA:= 1*(City_Category == "A")]
+new.dat[,CityB:= 1*(City_Category == "B")]
+new.dat$Stay_In_Current_City_Years[new.dat$Stay_In_Current_City_Years=="4+"] <- "4"
+
+new.dat[,Currentyears1:= 1*(Stay_In_Current_City_Years =="1")]
+new.dat[,Currentyears2:= 1*(Stay_In_Current_City_Years =="2")]
+new.dat[,Currentyears3:= 1*(Stay_In_Current_City_Years =="3")]
+new.dat[,Currentyears4:= 1*(Stay_In_Current_City_Years =="4")]
+
+
+#head(new.dat)
+new.dat[,Gender:= NULL]
+new.dat[,Age:= NULL]
+new.dat[,City_Category:= NULL]
+new.dat[,User_ID:= NULL]
+new.dat[,Stay_In_Current_City_Years:= NULL]
+#head(new.dat)
+
+#sumpur in groups
+cuts.pur <- quantile(new.dat$sumpur,probs = c(0.5))
+
+new.dat[, eval("pur.group") := cut2(x = get("sumpur"), cuts = cuts.pur)]
+new.dat[,sumpur:= NULL]
+head(new.dat)
+
+```
+
+
+## Sample Data
+```{r sampling data}
+set.seed(25)
+sample <- sample.int(n = nrow(new.dat), size = floor(0.9*nrow(new.dat)), replace = F) 
+sample2 <- sample.int(n = nrow(new.dat), size = floor(0.1*nrow(new.dat)), replace = T)
+train <- new.dat[sample, ]
+test <- new.dat[sample2, ]
+
+#train_500 <- new.dat[sample(.N, 500, replace = FALSE)]
+#train_2000 <- new.dat[sample(.N, 2000, replace = FALSE)]
+```
+
+
+##Modeling
+##1.Random forest
+```{r 1. random forest}
+mod.rf <- randomForest(formula = pur.group ~ ., data = new.dat) 
+predict.rf <- predict(object = mod.rf, newdata = test, type = 'response')
+summary(predict.rf)
+
+varImpPlot(mod.rf, sort = T, n.var=20, main="Top 20 - Variable Importance")
+
+CM.rf <- table(predict.rf, test$pur.group)
+acc.rf <- (sum(diag(CM.rf)))/sum(CM.rf)
+acc.rf
+
+```
+
+##multinomial logistic regression
+```{r 2. multinomial logistic regression}
+#require(ISLR)
+multinom.logit <- multinom(factor(train$pur.group) ~., data=train[,-15], maxit=500) #0.212831
+
+predict.ml <- predict(multinom.logit, test, "class")
+summary(predict.ml)
+CM.ml <- table(predict.ml, test$pur.group) 
+acc.ml <- (sum(diag(CM.ml)))/sum(CM.ml)
+acc.ml  #0.8981324
+
+```
+
+##ROC
+```{r 3. ROC}
+glm.fit <- glm(train$pur.group~.,family = binomial,data = train[,-15])
+rocfit <- roc(train$pur.group,glm.fit$fitted.values,plot=T)
+rocfit$auc
+
+```
+
+##KNN
+```{r 4. KNN}
+name <- names(new.dat)[-15]
+
+#change character to integer
+train$Stay_In_Current_City_Years <- strtoi(train$Stay_In_Current_City_Years)
+train$Occupation <- strtoi(train$Occupation)
+
+test$Stay_In_Current_City_Years <- strtoi(test$Stay_In_Current_City_Years)
+test$Occupation <- strtoi(test$Occupation)
+
+#factor y
+train$pur.group <- factor(train$pur.group)
+test$pur.group <- factor(test$pur.group)
+
+#normalize data 
+train_norm <- train[,lapply(X=.SD, FUN = "normalize"),.SDcols=name]
+test_norm <- test[,lapply(X=.SD, FUN = "normalize"),.SDcols=name]
+
+#knnModel 
+knnModel_10 <- knn(train = train_norm, test = test_norm, cl = train$pur.group, k=10)
+knnModel_5 <- knn(train = train_norm, test = test_norm, cl = train$pur.group, k=5)
+
+
+#prediction
+pred.knn10 <- knn(train = train_norm, test = test_norm, cl= train$pur.group, k = 10)
+summary(pred.knn10)
+CM.10 <- table(pred.knn10, test$pur.group )
+  
+pred.knn5 <- knn(train = train_norm, test = test_norm, cl= train$pur.group, k = 5)
+CM.5 <- table(pred.knn5, test$pur.group )
+
+#Accuracy
+acc.10 <- (sum(diag(CM.10)))/sum(CM.10) ;acc.10   
+acc.5 <- (sum(diag(CM.5)))/sum(CM.5) ;acc.5   
+
+```
+
+
+
+
+
+

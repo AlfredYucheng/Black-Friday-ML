@@ -1,0 +1,860 @@
+---
+title: "Predicting Consumer Behavior During Black Friday Season"
+author: "Qiao Han/Anastasiya Shpakova/Shuangmu Feng/Yucheng Zhang"
+date: "5/2/2019"
+output:   
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+footer: "Applied Data Science - Team U"
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+```{r function,warning = FALSE}
+scaleFUN <- function(x) sprintf("%.1fM", x/1000000)
+round.numerics <- function(x, digits){
+  if(is.numeric(x)){
+    x <- round(x = x, digits = digits)
+  }
+  return(x)
+}
+
+```
+
+```{r libraries, echo=FALSE, warning=FALSE, include=FALSE}
+#install.packages("pROC")
+library(prettydoc)
+library(DT)
+library(bazar)
+library(caret)
+library(DT)
+library(class)
+library(e1071)
+library(flexdashboard)
+library(gbm)
+library(ggplot2)
+library(glmnet)
+library(Hmisc)
+library(knitr)
+library(neuralnet)
+library(nnet)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(rmarkdown)
+library(shiny)
+library(xgboost)
+library(data.table)
+library(ModelMetrics)
+library(png)
+library(grid)
+library(pROC)
+user.name <- "User_ID"
+prod.id.name <- "Product_ID"
+gender.name <- "Gender"
+age.name <- "Age"
+occ.name <- "Occupation"
+city.cat.name <- "City_Category"
+stay.name <- "Stay_In_Current_City_Years"
+married.name <- "Marital_Status"
+prod.1.name <- "Product_Category_1"
+prod.2.name <- "Product_Category_2"
+prod.3.name <- "Product_Category_3"
+purchase.name <- "Purchase"
+
+```
+
+## Predicting Consumer Behavior During Black Friday Season
+Table of Contents
+
+
+    1.  Introduction
+    
+    1.1 About the Project and Sources of Data
+    1.2 A Quick Look at the Dataset
+    1.3 Examining the Variables
+
+
+    2.  Examination of the Data
+    
+    2.1 Simple statistics
+    2.2 Exploratory Data Analysis
+
+
+    3.  Data Cleaning
+
+
+    4.  Investigation and Interpretation
+    
+    4.1 Sampling
+    4.2 Modeling - Random Forest
+    4.2.1 Introduction to Random Forest
+    4.2.2 Result Analysis
+    4.3 Modeling - Multinomial Logistic Regression
+    4.3.1 Introduction to Multinomial Logistic Regression
+    4.3.2 Result Analysis
+    4.4 Modeling - ROC
+    4.4.1 Introduction to Random Forest
+    4.4.2 Result Analysis
+    4.5 Modeling - KNN
+    4.5.1 KNN-10
+    4.5.2 KNN-5
+
+    
+    
+    5.  The Results 
+    
+    5.1 Conclusion
+    5.2 Assumptions 
+    5.3 Limitations and Uncertainty
+    5.4 Future Investigation
+    
+    
+    6.  Reference
+    
+
+
+
+
+  
+
+
+```{r,echo=FALSE,include=FALSE}
+#![A Typical Black Friday Situation](//Users/qiaohan/Desktop/5243/Final Project/BF.png)
+# change the path "/Users/anastasiya/Desktop/Final/Data/BlackFriday.csv"
+# img ![A Typical Black Friday Situation](/Users/Yuhang's laogong/Desktop/2019/5243/final project/BF.png)
+dat <- fread("BlackFriday.csv")
+```
+
+## 1. Introduction
+
+##1.1 About the Project
+During our initial project discussion, our team was able to identify a shared interest in Consumer Discretionary sector, Marketing and Economics. Based on our experience with the survey data covered in class, we decided to look in the similar direction. We enjoyed analyzing consumer preferences for various demographic segments presented in lecture 7, yet we would like to understand how different preferences affect the revenue generation and profitability of consumer goods companies. Based on these insights, companies would be able to more efficiently target the most valuable populations.
+
+With consumption being the key driver of growth internationally, it certainly makes sense to dive deeper into the topic and examine the market for possible inefficiencies. However, during the times of booming global consumption and growing prevalence of ads, we thought that it may be harder for companies to reach their most valuable consumers, particularly due to high competition and high volume of advertising content online and in the physical world. We are interested in helping corporations boost the effectiveness of their marketing campaigns and optimize their targeting algorithms. In order to do so, we would like to better categorize consumers into various purchasing power segments and eventually predict how much money consumers are willing to spend on certain goods and services.      
+
+We decided to search for a dataset that incorporates both demographic data, as well as detailed purchasing history and revenue breakdown data. Many ideas for potential datasets that we had in mind were not available in the public domain. In our case, as opposed to the database lecture, matching multiple datasets for consumers and their purchases did not prove practical either. It was quite challenging to find a source that combined both types of information. 
+
+However, after thorough evaluation of available datasets, we discovered the Black Friday sales dataset.  [https://www.kaggle.com/mehdidag/black-friday] The data were collected from an anonymous retail store that provided a combination of both demographic data on consumers and sales data broken down by product. This dataset is also used for an ongoing competition hosted by Analytics Vidhya that can be accessed through the official competition¡¯s page: https://datahack.analyticsvidhya.com/contest/black-friday/
+
+The data represent a sample of transactions that occurred at the store during the Black Friday shopping season. The shared data particularly focuses on purchases of ¡°high volume products¡± that happened over the duration of one month. The dataset contains matching pairs of product and consumer information, as well as supplementary data about both dimensions. On the product side, the dataset provides the Purchase Amount for each Product ID. In addition, aach Product has a unique score that classifies it with respect to three Product Categories (masked). Because the data provider chose to be left unknown, we only have access to product codes and concealed categories, which limits our understanding of the nature of retailer¡¯s business. The high degree of anonymity makes our dataset a bit abstract, yet it does not in any way stand in the way of our analysis. The aforementioned fields provide sufficient and clear separation of products, providing us with a good foundation for building our analysis.   
+
+In addition to the product level data, the dataset also contains consumer level data. Each user is assigned a unique identifier located in the column User ID. Additionally, the dataset contains descriptive characteristics of the customers who made the purchases during the observation period. There are six variables that contain general demographic characteristics of the customers that will help us form a better understanding of customers¡¯ background (age, gender, occupation, marital status, city, number of years lived in the city). Once again, some of these variables, such as Occupation, are masked, which leads to a certain loss of context. Yet, given data do provide clear separation between classes.  Consumer variables will be discussed in further detail in the following section (Introduction to the Variables).          
+
+
+##1.2 A Quick Look at the Dataset
+The dataset contains 12 columns and 537,578 rows. Each row represents an individual transaction that occurred during the observation period (one month). Each recorded transaction can be described by a unique user (User_ID column) buying a unique product (Product_ID) paying a certain price. Surprisingly, prices for the same product vary across the dataset. We explain this variability by a) varying discount amounts during Black Friday season; b) lack of data on quantities sold -- it is unknown to us whether each row represents one item or not.    
+
+
+Our goal for this project is to study the relationship between consumer characteristics and amount of money spent to understand consumer behavior and be able to predict future purchasing behavior. It is likely that the retailer would be interested in getting insights on their shoppers and their choices, which would allow the company to tailor its target marketing strategy. These insights would allow the company to customize campaigns for particular products or structure promotions for certain consumer groups, depending on its current business needs and priorities.   
+
+
+Thus, we started with a general curiosity around the following two questions:  a) what type of goods consumers of a certain profile are likely to buy; and b) how much consumers of a certain profile are willing to spend.  After narrowing down our path / focus, we set off to build a predictive model that would help divulge patterns in consumer spending through application of a combination of various machine learning techniques covered in class.
+
+
+At the beginning, we started off with considering the following two approaches:
+Dependent variable: total amount spent (numeric) 
+Dependent variable: bucket of total amount spent (categorical) 
+Given the high degree of variability present in the dataset (particularly in the Purchase amount by Product_ID), we decided to predict the bucket of total consumer spending. Aggregating the total amount spent by User_ID helps us avoid individual product final price-quantity disparity, as it absorbs the spending amount variability discussed earlier. If we were given more granular information by the data provider, we could have examined this aspect in more detail; yet, without per unit level information we choose to work with higher level aggregation. The exact process of how we constructed our spending ¡°buckets¡± will be described later in the report (Data Cleaning).     
+
+##1.3 Examining the Variables
+
+1.User_ID (integer)
+Unique identifier for a given consumer; there are 5,891 unique customers in the dataset 
+
+2.Product_ID (character)
+Unique identifier for a given product; there are 3,623 unique products in the dataset 
+
+3.Gender (character)
+Gender of a given consumer, 2 unique values: M or F representing male or female, respectively
+
+4.Age (character)
+Age group of a given consumer; 7 distinct groups: 0-17, 18-25, 26-35, 36-45, 46-50, 51-55, 55+
+
+5.Occupation (integer)
+Occupation group of a given consumer; 21 distinct groups: 0 through 21, each representing from 0.28% to 13.18% of the population. The least percent of sampled consumers (0.28%) belong to Group 8, while the most (13.18%) belong to Group 4. There is no additional interpretation for the groups.   
+
+6.City Category (character)
+Type of the city / area, where a given consumer resides, 3 distinct groups: A, B, C. Our guess for this category is rural / urban / suburban (in no given order), yet we found no confirmation to our theory. 
+
+7.Stay_in_Current_City_Years (character)
+The length of stay of a given consumer in the particular city, 5 distinct groups: 0, 1,  2,  3, 4+. There is no specification beyond ¡°4+¡± segment. 
+
+8.Marital_Status (integer)
+Marital status of a given consumer; 2 distinct groups: 0 and 1. Our team assumed that 1 represents ¡°married¡±, whereas ¡°0¡± represents ¡°single¡±.
+
+9.Product_Category_1, Product_Category_2, Product_Category_3 (integer)
+Product_Category_1: 18 distinct groups
+1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18
+
+10.Product_Category_2: 17 distinct groups + NA
+2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 
+NA: 31%
+
+11.Product_Category_3: 15 distinct groups + NA
+3  4  5  6  8  9 10 11 12 13 14 15 16 17 18
+NA: 69%
+
+12.Each product is assigned a score for one of the three categories - It is unknown whether the product categories are related. By inspection, we concluded that each product has a unique triplet that defines is classification into three categories. 
+
+
+
+**extra code** 
+```{r min_max}
+max.price <- dat[, max(Purchase), Product_ID]
+min.price <- dat[, min(Purchase), Product_ID]
+sd.price <- dat[, sd(Purchase), Product_ID]
+price.range.dat <- merge(min.price, max.price, by = "Product_ID")
+price.range.dat <- merge(price.range.dat, sd.price, by = "Product_ID")
+price.range.dat <- price.range.dat[,lapply(X=.SD, FUN = "round.numerics", digits=2)]
+names(price.range.dat) <- c("Product_ID","Min","Max", "SD")
+price.range.dat <-price.range.dat[, Diff:= Max - Min]
+price.range.dat <-price.range.dat[is.na(SD), SD := 0]
+datatable(price.range.dat, rownames = F)
+```
+
+We examined the Purchase Amount in further detail. We constructed a table that shows minimum and maximum amounts spent on the same product by different users. We also calculated the difference between the maximum and the minimum, as well as overall variability of price through calculating standard deviation. We found out there were only 141 products that had the same price / amount spent. All remaining products ranged from 16 units to 19,334 units of unknown currency. Standard deviations of prices varied from 11 to 8,970 units of unknown currency. We were quite surprised by the wide ranges of amounts spent and attribute the differences to varying discounts during the Black Friday season. Given this degree of variability, we chose to refrain from predicting purchase amount for a specific product. Instead, we would like to focus on predicting the total spending amount for a given consumer.  
+
+Additionally, we have to admit that we were a bit shocked by scale of spending. The highest amount spent on one product was 23,961 units of unknown currency, while the highest total amount spent by one user was 10,536,783 units of unknown currency. Since the data source was kept confidential, we cannot be fully sure of the currency used in the dataset. However, despite the seemingly inflated scale of figures, we chose not to conduct any manipulation on the purchase amount column. 
+
+
+
+
+```{r, echo=FALSE,include = FALSE}
+#Total Money spent by indl user
+stats.by.user <- dat[,.(N_Purchases = .N,
+                        Mean = mean(Purchase), 
+                        Max = max(Purchase), 
+                        Sum = sum(Purchase)), 
+                     by=User_ID]
+
+stats.by.user <- stats.by.user[,lapply(X=.SD, FUN = "round.numerics", digits=2)]
+setorderv(stats.by.user, 'Sum', -1)
+datatable(stats.by.user, rownames=FALSE)
+
+#sum(as.numeric(dat[,Purchase]))
+```
+
+ 
+```{r, echo=FALSE,include = FALSE}
+### DT for unique ppl 
+# Aggregate amount of purchase  
+total.purchase <- dat[,.(sumpur = sum(Purchase,na.rm = TRUE)), by = 'User_ID']
+
+#Select demographic characteristics 
+dat.unique <- dat[,1:8]
+dat.unique <- unique(dat.unique, by = "User_ID")
+
+#Merge
+dat.m <- merge(dat.unique, total.purchase, by ="User_ID")
+```
+
+# 2. Examination of the Data
+
+##2.1 Exploratory Data Analysis
+
+After having a look at the data columns, we will begin our exploratory data analysis. The purpose of this process is to give more information about our data so that a more effective marketing strategy could be made to maximize profit.  
+We consider these questions. Who is more likely to spend more on Black Friday? Men or women and married or single? What products are more likely to be sold on black Friday? Without exploratory data analysis and data visualization, we cannot tell the answer. Only if the relevant feature has a strong correlation can we build model with higher accuracy. 
+In exploratory data analysis section, we investigate different relationships between 6 features. They are:
+
+       Product_ID: Unique identifier of product
+       Gender: Sex of shopper
+       Age Group: Age of shoppers split into 6 groups
+       City_Category: Residence location of shopper
+       Marital_Status: Marital status of shopper (we denote 1 for married customers and 0 for unmarried customers)
+       SumPur: Sum total purchase amount for each shopper in unknown currency
+
+If we look at the first few rows of our dataset, we can see that each row represents a different transaction, or item purchased by a specific customer. We group all transactions by a specific User_ID to get a sum of all purchases made by a single customer, and this is sumpur in our future dataset used for running models. 
+
+
+###Gender
+
+  To begin our exploration, we examine the gender of shoppers at this store.
+Since each row represents an individual transaction, we must first group the data by User_ID to remove duplicates.
+
+
+```{r EDA_gender, warning=FALSE}
+gender.eda <- dat.m[,.N,by= gender.name]
+gender.eda
+gender_vis = ggplot(data = gender.eda) + 
+                      geom_bar(color = 'black', stat = 'identity', mapping = aes(x = Gender, y = N, fill = Gender)) +
+                      labs(title = 'What Gender are the Customers in this Dataset?') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Set1') +
+                      xlab("Gender") + ylab("Number of Customers") +
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white")
+                            )
+print(gender_vis)
+```
+  
+  As we can see, the number of male shoppers is almost 2.5 times of females shopping at this store on Black Friday, which is really counterintuitive as we always think women love shopping much more than men do, but it could also mean less number of married females paid for products and their spouse paid for them. This gender split metric is helpful to retailers because some might want to modify their store layout, product selection, and other variables differently depending on the gender proportion of their shoppers.
+  
+  To investigate further, we compute the total spending amount as it relates to Gender. 
+
+```{r EDA_gender_purchase,warning= FALSE}
+gender.purchase.eda= dat.m[,.(N = sum(sumpur)),by = gender.name]
+gender.purchase.eda
+gender_purchase_vis = ggplot(data = gender.purchase.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = Gender, y = N, fill = Gender)) +
+                      labs(title = 'Which Gender Spends Most?') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      xlab("Gender") + ylab("Amount Spent") + 
+                      scale_y_continuous(labels = scaleFUN) + 
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                      )
+print(gender_purchase_vis)
+```
+
+  We can see that the total transaction made by Females was 1164624021 and the total transaction made by Males was 3853044357.The visualization of our results is as below. 
+
+  Then we investigate total purchase amount and found the top 10 popular products. We continue to analyze our top 10 popular seller to see if any relationship to Gender exists.
+
+```{r EDA_top10 products purchase & gender, warning=FALSE}
+subdat <-dat[,.(Number=.N),by=prod.id.name]
+sortsub <-setorderv(x=subdat,cols="Number",order = -1)[1:10]
+dat1 <- dat[get(prod.id.name)%in%sortsub$Product_ID] #sub dataset with only top10 pupular products
+popprod.pur.gender <- dat1[,.(`Popular products purchase`=sum(Purchase)),by=c(prod.id.name,gender.name)]
+popprod.pur.gender.eda <- setorderv(x=popprod.pur.gender,cols=c(prod.id.name,"Popular products purchase"),order = 1)
+
+popprod.pur.gender.eda_vis = ggplot(data = popprod.pur.gender.eda) + 
+                      geom_bar(position="dodge",color = 'white', stat = 'identity', mapping = aes(x = Product_ID, y =`Popular products purchase`, fill = Gender)) +
+                      labs(title = 'How Much Did Customer Spent on Top 10 Products (by Volume)?') +
+                      theme(axis.text.x = element_text(size = 5)) +
+                      scale_fill_brewer(palette = 'Set1') +
+                      xlab("Product") + ylab("Amount Spent") + 
+                      scale_y_continuous(labels = scaleFUN) + 
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                      )
+print(popprod.pur.gender.eda_vis)
+
+# sort(sortsub$Product_ID); sort(sortsub2$Product_ID) #P00112142 #69194486
+```
+
+  For each popular seller, we see a similar distribution between genders to our overall dataset gender split.
+
+###Age
+  
+  We begin with examining Age by creating a table of each individual age group and their respective counts.
+
+```{r EDA_age,warning = FALSE}
+scaleFUN <- function(x) sprintf("%.1fM", x/1000000)
+
+age.eda <- dat.m[,.N,by= age.name]
+age.eda
+```
+
+  It seems like the majority of the population in the group 26-35 attended the Black Friday sale. Here is the visualization of this table.
+  
+```{r EDA_age2,warning = FALSE}
+scaleFUN <- function(x) sprintf("%.1fM", x/1000000)
+age_vis = ggplot(data = age.eda) + 
+                      geom_bar(color = 'black', stat = 'identity', mapping = aes(x = Age, y = N, fill = Age)) + 
+                      labs(title = 'Age of Customers') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Spectral') +
+                      xlab("Age") + ylab("Number") +
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white")
+                            )
+print(age_vis)
+```
+
+  We also plot a similar chart depicting the distribution of age within our "top 10 popular seller" category. This will show us if there is a specific age category that purchased the popular product more than other shoppers.
+
+
+```{r EDA_top10 products purchase & age, warning=FALSE}
+popprod.pur.age <- dat1[,.(`Popular products purchase`=sum(Purchase)),by=c(prod.id.name,age.name)]
+
+popprod.pur.age.eda <- setorderv(x=popprod.pur.age,cols=c(prod.id.name,"Popular products purchase"),order = 1)
+
+popprod.pur.age.eda_vis = ggplot(data = popprod.pur.age.eda) + 
+                      geom_bar(position="dodge", color = 'grey', stat = 'identity', mapping = aes(x = Product_ID, y =`Popular products purchase`, fill = Age)) +
+                      labs(title = 'Which Age Group Buys the Top 10 Products Most? ') +
+                      theme(axis.text.x = element_text(size = 7)) +
+                      scale_fill_brewer(palette = 'Set1') +
+                      xlab("Product") + ylab("Amount Spent") + 
+                      scale_y_continuous(labels = scaleFUN) + 
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                      )
+print(popprod.pur.age.eda_vis)
+
+```
+  
+  The result is obvious. It seems younger people (26-35 & 18-25) account for the highest number of purchases of all most popular products. People between 26-35 years old contributes almost 40 percent of total purchase amount of all popular products. We compare this observation to the overall dataset. 
+  
+```{r EDA_age_purchase,warning= FALSE}
+age.purchase.eda= dat.m[,.(N = sum(sumpur)),by = age.name]
+
+age_purchase_vis = ggplot(data = age.purchase.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = Age, y = N, fill = Age)) +
+                      labs(title = 'Which Age Group Spends Most?') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      xlab("Age Group") + ylab("Amount Spent") + 
+                      scale_y_continuous(labels = scaleFUN) + 
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                      )
+print(age_purchase_vis)
+```
+
+
+```{r EDA_ all top10 products purchase & age, warning=FALSE}
+all.popprod.pur.age <- popprod.pur.age[,.(`sum of popular products`=sum(`Popular products purchase`)),by=Age]
+all.popprod.pur.age.eda <- setorderv(x=all.popprod.pur.age,cols="sum of popular products",order = 1)
+
+all.popprod.pur.age.eda_vis = ggplot(data =all.popprod.pur.age.eda ) + 
+                      geom_bar(position="dodge", color = 'grey', stat = 'identity', mapping = aes(x = Age, y =`sum of popular products`, fill = Age)) +
+                      labs(title = 'Which Age Group Buys All Top 10 Products Most? ') +
+                      theme(axis.text.x = element_text(size = 7)) +
+                      scale_fill_brewer(palette = 'Set2') +
+                      xlab("Age Group") + ylab("Amount Spent") + 
+                      scale_y_continuous(labels = scaleFUN) + 
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                      )
+print(all.popprod.pur.age.eda_vis)
+```
+
+  We can see that there is some deviation with the proportion of customers grouped by age when comparing the total popular products purchase to the overall purchase. It looks like people between 36-45 are buying popular products slightly less than other products included in the overall dataset.
+
+###City
+  Next, we examine the City variable. We first create visualization to see the shoppers'? location distribution. 
+
+```{r EDA_city, warning=FALSE}
+city.eda <- dat.m[,.N,by= city.cat.name]
+
+city_vis = ggplot(data = city.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', 
+                      mapping = aes(x = City_Category, y = N, fill = City_Category)) +
+                      labs(title = 'How Many of the Customers in Each City?') +
+                      theme(axis.text.x = element_text(size = 10), legend.position = "right") +
+                      theme(panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                           
+                      )
+print(city_vis)
+```
+
+  We see most of shoppers living in city C. Then we compute the total purchase amount by City to see the which city's customers spent the most on Black Friday.
+  
+ 
+```{r EDA_city_purchase,warning = FALSE}
+city.purchase.eda= dat[,.(N = sum(Purchase)),by = city.cat.name]
+
+city_purchase_vis = ggplot(data = city.purchase.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = City_Category, y = N, fill = City_Category)) +
+                      labs(title = 'Where are Customers Spending Most?') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Set1') +
+                      xlab("City Type") + ylab("Amount Spent") + 
+                      scale_y_continuous(labels = scaleFUN) + 
+                      theme(legend.position="right",
+                            panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                      )
+print(city_purchase_vis)
+```
+
+   
+  Here we can see that customers from city C were the most frequent shoppers on Black Friday but customers from city B had the highest amount of total purchases. One possible reason for this might be customers from city B are simply making more purchases than residence of City A + City C, and not necessarily buying more expensive products. 
+
+  
+###Marital Status
+
+  Now we examine the marital status of store customers.
+
+```{r EDA_Marital Status, warning=FALSE}
+mar.eda <- dat.m[,.N,by= married.name]
+
+mar_vis = ggplot(data = mar.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', 
+                      mapping = aes(x = Marital_Status, y = N, fill = Marital_Status)) +
+                      labs(title = 'How Many of the Customers are Married?') +
+                      theme(axis.text.x = element_text(size = 10), legend.position = "none") +
+                      theme(panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                           
+                      )
+print(mar_vis)
+```
+  
+  There's no description of marital status in the dataset, but in this project let us assume 1 = married and 0 = single. It looks like most of our shoppers happen to be unmarried. We will do the similar process for marital status as our investigation of age groups, and we will look at Marital_Status in each City_Category.
+
+
+
+# 3. Data Cleaning
+
+In order to build the models, some variables will have to undergo transformation. 
+
+First of all, we had to decide what our dependent variable is going to be. We chose to predict the bucket of total sum of purchase by each user. Therefore, at first, we had to calculate total purchase amount for each unique user, in other words, aggregate purchase amount column by User_ID. Next, we created buckets for the total purchase amounts. We had to determine how we wish to split the data into segments, and for the purpose of this analysis, we decided to work with two buckets split at the median of total purchase amount. The median of the total per user spending amount is 512,612 units of unknown currency. 
+
+We assigned the bucket to each consumer based on their total amount spent (total purchase amount column described above). As a result, all our customers were assigned to two groups: [   44108,  512612) [  512612,10536783], where the lower group represents regular shoppers, while the other group represents power shoppers.  
+
+This would allow the management to answer the key question: based on the given demographic characteristics, is the user a regular shopper or a power shopper? Our model will be able to determine the likelihood of either of those options, and our goal is to get as close to the reality as possible (through maximizing the accuracy of our predictive models).
+   
+To run our models, we would like to construct a new datatable that would include our transformed dependent variable . This new datatable will have the number of rows that is equal to the number of unique users in the dataset.  
+
+Next, we work on selecting and transforming (if needed) our predictors. 
+
+We would like to include the following variables in our new datatable for modeling: gender, age group, marital status, occupation, city type, length of current stay. Some of these variables would need some transformation so that we could successfully use them in our models.  
+
+Gender: We would like to convert this variable into 0 and 1 from current levels F and M. In our Gender column in the new datatable, 1 would signify male and 0 would signify female.   
+  
+Age Group: We would like to split our Age Group variable into six separate columns, where each column signifies a distinct age group and contains binary values, 0 and 1. We name those columns Age17, Age25, Age35, Age45, Age 50 and Age55. A value of 1 in either one of these columns will represent consumers of each respective age groups: 0-17, 18-25, 26-35, 36-45, 46-50, 51-55. Consumers in the last, 55+ group, will be represented by having all zeroes in the Age17, Age25, Age35, Age45, Age50 and Age55 columns.  
+
+City Type: Similarly to the previous variable, we would like to split our City Type variable into 2 separate columns, where each column signifies a distinct city type and contains binary values, 0 and 1. We name those columns CityA and CityB. A value of 1 in either one of these columns will represent residents of City A or City B. City C will be represented by having 0 values in both of those columns.  
+
+Stay_In_Current_City_Years: We decide to convert all users who stayed in their city for over 4 years (¡°4+¡±) to just a ¡°4¡± character. Afterwards, we split the variable into 4 columns where a value of 1 will mark one of the four length of stay groups.  
+
+
+```{r datacleans, echo = FALSE}
+newdat <- dat[,.(sumpur = sum(Purchase,na.rm = TRUE)), by = 'User_ID']
+#summary(newdat$sumpur)
+#dim(newdat)[1] == length(unique(dat$User_ID))
+tab <- table(dat$User_ID)
+for(i in 2:length(tab)){
+  tab[i] <- tab[i-1] + tab[i]
+}
+setorderv(dat,cols = 'User_ID',order = 1)
+infograb <- dat[tab,]
+new.dat <- cbind(infograb[,c(1,3:8)],newdat[,2])
+#head(new.dat)
+backup <- copy(new.dat)
+new.dat[,Gen:= 1*(Gender =="M")]#male count as 1
+
+new.dat[,Age17:= 1*(Age =="0-17")]
+new.dat[,Age25:= 1*(Age =="18-25")]
+new.dat[,Age35:= 1*(Age =="26-35")]
+new.dat[,Age45:= 1*(Age =="36-45")]
+new.dat[,Age50:= 1*(Age =="46-50")]
+new.dat[,Age55:= 1*(Age =="51-55")]
+
+new.dat[,CityA:= 1*(City_Category == "A")]
+new.dat[,CityB:= 1*(City_Category == "B")]
+new.dat$Stay_In_Current_City_Years[new.dat$Stay_In_Current_City_Years=="4+"] <- "4"
+
+new.dat[,Currentyears1:= 1*(Stay_In_Current_City_Years =="1")]
+new.dat[,Currentyears2:= 1*(Stay_In_Current_City_Years =="2")]
+new.dat[,Currentyears3:= 1*(Stay_In_Current_City_Years =="3")]
+new.dat[,Currentyears4:= 1*(Stay_In_Current_City_Years =="4")]
+
+
+#head(new.dat)
+new.dat[,Gender:= NULL]
+new.dat[,Age:= NULL]
+new.dat[,City_Category:= NULL]
+new.dat[,User_ID:= NULL]
+new.dat[,Stay_In_Current_City_Years:= NULL]
+#head(new.dat)
+
+#sumpur in groups
+cuts.pur <- quantile(new.dat$sumpur,probs = c(0.5))
+
+new.dat[, eval("pur.group") := cut2(x = get("sumpur"), cuts = cuts.pur)]
+new.dat[,sumpur:= NULL]
+head(new.dat)
+
+```
+
+
+# 4 Investigations and Interpretations
+
+## 4.1 Sampling
+```{r sampling data}
+set.seed(25)
+sample <- sample.int(n = nrow(new.dat), size = floor(0.9*nrow(new.dat)), replace = F) 
+sample2 <- sample.int(n = nrow(new.dat), size = floor(0.1*nrow(new.dat)), replace = T)
+train <- new.dat[sample, ]
+test <- new.dat[sample2, ]
+
+#train_500 <- new.dat[sample(.N, 500, replace = FALSE)]
+#train_2000 <- new.dat[sample(.N, 2000, replace = FALSE)]
+```
+
+We split our data set into two groups by distributing 90% as our train data set and 10% as our test data set. We bootstrapped our test data with replacement. 
+
+
+## 4.2 Modeling_Random Forest
+
+### 4.2.1 Introduction to Random Forest
+
+Random forests are a type of ensemble method that work for both classification and regression. They use bootstrapped samples of decision trees and introduce randomness. They are ¡®random¡¯ because each time one of the trees makes a split, it only considers a subset of the features. Basically, the Random Forest algorithms can be divided into Training and Predicting.
+	For Training part, the first step is to get a random sample of observations(with replacement, which is standard for drawing bootstrap samples) from the training data. In our project, we choose 90% of the total observations as our training set with a replacement. Then, at each split, we search from among a random sample of features to determine that split(without replacement since including a sample twice won¡¯t contribute to our model). The next step is to train a decision tree on the above and we repeat what we did from the beginning. 
+
+
+For the Predicting part, we predict the target using each tree previously trained and average the predictions to achieve our result.
+For example, if our data has 10 features, a random forest will only consider a random sample of 5 of those features to split on for each node split. This is an advantage because it helps decrease correlation in trees within the forest. This is important because ensembling methods really only work if the models you are combining are making different mistakes, otherwise you¡¯re not getting the advantages of combining methods. Furthermore, random forests rarely overfit the data which is another major advantage that they have over decision trees and we can use as many trees as we want (only subject to any limitations on computation time and the total sample size -- we didn¡¯t have a large sample size in our case). Meanwhile, it is also a powerful tool to detect nonlinear interactions between predictor variables when finding variable importance. A disadvantage of random forests is that they are not very interpretable, unlike multinomial logistic regression. They don¡¯t easily give you the probabilities of a data point being in a particular class and it¡¯s not always evident how a single feature is affecting the way random forest is making a prediction. 
+
+
+There are several parameters that you can tune in a random forest. For example, you can tune the maximum depth of each decision tree, the number of trees in the forest (although really, more is always better with forests), The minimum improvement required to split, the minimum observations required before splitting and the splitting method(e.g. Gini, squared deviance, etc) We decided to only use the default valued setted in **RandomForest** package to train our model. And in the future we will try to train the model with different maximum depth of decision tree and the number of trees. 
+
+```{r 1. random forest}
+mod.rf <- randomForest(formula = pur.group ~ ., data = new.dat) 
+predict.rf <- predict(object = mod.rf, newdata = test, type = 'response')
+summary(predict.rf)
+
+varImpPlot(mod.rf, sort = T, n.var=20, main="Top 20 - Variable Importance")
+
+CM.rf <- table(predict.rf, test$pur.group)
+acc.rf <- (sum(diag(CM.rf)))/sum(CM.rf)
+acc.rf
+```
+### 4.2.2 Random Forest Result Analysis
+
+As we can see from the Variable Importance table, the Occupation definitely contribute a huge part in the predicting process, the Mean Decrease Gini is above 100. However, the rest of the variables may not perform so well. After the Occupation, the Gender and Marital Status are the most important variables but they only got about 25 Mean Decrease Gini in our model. 
+
+```{r,cf.rf}
+print(CM.rf)
+```
+In this Model, according to the result of the confusion table, we only got a 64.35% accuracy. It might be a quite low accuracy in the binary predicting model, and the next step we will do is to go back to the variables and check the box plot of the distribution to see if we need to add a log to the variable and we also need to consider the collinearity in the prediction model. There must be a huge room to improve it.
+
+## 4.3 Modeling_Multinomial Logistic Regression
+
+###4.3.1 Introduction to Multinomial Logistic Regression
+Multinomial logistic regression is a linear classification model. In the multinomial case, it models the log-odds of a data point being in some class k as a line. It predicts the most probable class for a particular point as the label of that point. An advantage of using this classifier is that we can actually recover the probability of each point belonging to a certain class, which is not something we can do as easily with non-linear classifiers such as decision trees or K-nearest neighbors. A disadvantage of this model is that it assumes a linear decision boundary which can be restrictive, depending on the data. It can be made more powerful if we consider feature spaces that are in higher dimensions than the original feature space of the data, but higher feature spaces don¡¯t make a lot of sense for image data. Especially since the number of feature spaces is already quite high with images and we don¡¯t want to blow up the data too much. 
+
+There were not really any parameters to tune for multinomial logistic regression. In some packages or in other languages, you can choose to regularize the regression model. Regularization works well if your model is overfitting your data or if there are highly correlated variables in your dataset (collinearity). Here, we kept the model simple as the **nnet** package doesn¡¯t provide many parameter tuning options for logistic regression. We chose this model because it¡¯s a great baseline model since it¡¯s linear and there¡¯s not much tuning to be done. We should be worried if we do worse than this model and we should aim to do quite a bit better than this model. 
+
+###4.3.2 Multinomial Logistic Regression Result Analysis
+```{r 2. multinomial logistic regression,include = FALSE}
+#require(ISLR)
+multinom.logit <- multinom(factor(train$pur.group) ~., data=train[,-15], maxit=500) #0.212831
+
+predict.ml <- predict(multinom.logit, test, "class")
+summary(predict.ml)
+CM.ml <- table(predict.ml, test$pur.group) 
+acc.ml <- (sum(diag(CM.ml)))/sum(CM.ml)
+acc.ml  #0.8981324
+
+```
+
+```{r}
+print(CM.ml)
+
+```
+According to the confusion table above, we see that the error term on the confusion table is also very high, after summing up the diagonals numbers and divided by the sum of our testing samples, we got a accuracy rate of 50.50% . Compared with the random guess of a binary result, the model didn¡¯t seem to perform well on this data set. In the future, we will try to take some transformation on the data set variables and we also need to be careful about the interaction of the variables during the prediction process. In conclusion, the Multinomial Logistic Regression method didn¡¯t perform a good model here.
+
+
+## 4.4  Modeling_ROC
+
+### 4.4.1 Introduction to ROC
+Another way to evaluate the performance of our model is to compare the false positive rate with the true positive rate in the Receiver Operator Characteristic(ROC) curve. The true positive rate(TPR) is equivalent to recall or sensitivity. The false positive rate(FPR) is the complement of what is sometimes called the specificity, which is defined as follows:
+
+
+In some cases, our classifier can return the posterior probability for each category, which gives us a choice of thresholds or cut off values to evaluate our models. The ROC curve is a plot of the TPR and FPR over a range of cutoff values rather than just using a single cutoff (like confusion matrix: when probability > 0.5)
+
+
+### 4.4.2 ROC Analysis
+```{r 3. ROC}
+glm.fit <- glm(train$pur.group~.,family = binomial,data = train[,-15])
+rocfit <- roc(train$pur.group,glm.fit$fitted.values,plot=T)
+rocfit$auc
+```
+In our case, the AUC, the area under the cure is only 0.5289. According to the definition of AUC, we can assume well, our model didn¡¯t perform that well as the AUC value is so close to 0.5 . As we discussed above the next step we might want to take is to do some transportation to the data set and be aware of the multicollinearity of the variables in the predicting model. We still got a lot of room to improve our model. 
+
+## 4.5 Modeling_KNN
+
+###4.5.1 KNN - 10
+```{r 4. KNN,include = FALSE}
+name <- names(new.dat)[-16]
+
+#change character to integer
+train$Stay_In_Current_City_Years <- strtoi(train$Stay_In_Current_City_Years)
+train$Occupation <- strtoi(train$Occupation)
+
+test$Stay_In_Current_City_Years <- strtoi(test$Stay_In_Current_City_Years)
+test$Occupation <- strtoi(test$Occupation)
+
+#factor y
+train$pur.group <- factor(train$pur.group)
+test$pur.group <- factor(test$pur.group)
+
+#normalize data 
+train_norm <- train[,lapply(X=.SD, FUN = "normalize"),.SDcols=name]
+test_norm <- test[,lapply(X=.SD, FUN = "normalize"),.SDcols=name]
+
+#knnModel 
+knnModel_10 <- knn(train = train_norm, test = test_norm, cl = train$pur.group, k=10)
+knnModel_5 <- knn(train = train_norm, test = test_norm, cl = train$pur.group, k=5)
+
+
+#prediction
+pred.knn10 <- knn(train = train_norm, test = test_norm, cl= train$pur.group, k = 10)
+summary(pred.knn10)
+CM.10 <- table(pred.knn10, test$pur.group )
+  
+pred.knn5 <- knn(train = train_norm, test = test_norm, cl= train$pur.group, k = 5)
+CM.5 <- table(pred.knn5, test$pur.group )
+
+#Accuracy
+acc.10 <- (sum(diag(CM.10)))/sum(CM.10) ;acc.10   
+acc.5 <- (sum(diag(CM.5)))/sum(CM.5) ;acc.5   
+```
+The k-nearest neighbors (KNN) algorithm is a simple, easy-to-implement supervised machine learning algorithm that can be used to solve both classification and regression problems. Training a KNN model is simply storing all of the training data. The real work happens when we want to make a prediction. To make a prediction, KNN will find the ¡°K¡± nearest neighbors of a test point based on some distance metric (eg. Euclidean distance). In regression, KNN will simply average the ¡°y¡± values of the k closest points for a given test point. In classification, KNN will take the majority vote of the ¡°y¡± values of the k closest points for a given test point. If k = 1, then the object is simply assigned to the class of that single nearest neighbor. Lower k values mean a higher complexity of the model. 
+
+If we were to plot the decision boundaries made with low k values, we would get very irregular boundaries compared to if we chose a higher k. An advantage of the model is that they generally work well for both classification and regression and it¡¯s easy to understand what they¡¯re doing. A major disadvantage is that they don¡¯t work well in very high feature spaces because the notion of what points are ¡®close¡¯ together doesn¡¯t translate well to higher dimensions. Scaling the data can help so that all features are on similar scales, but the problem remains. We selected this technique because it is a good baseline for non-linear and non-parametric models. 
+
+
+The only parameter tuning to be done with KNN is the value k. We chose to try two different k values and count these as two different models. In the future, we would do a grid-search on several k values, say, from 1 to 50, and select the k value that gave us the best cross-validation results.
+
+```{r,cf10}
+print(CM.10)
+
+```
+According to the confusion table, the accuracy rate is 63.837% which is also not a good prediction result under the binary respondent variables.
+
+###4.5.2 KNN -5
+
+Compared with the KNN ¨C 10 above,  we see a decrease of test error for KNN ¨C 5. The lack of difference in running time is not too surprising assuming that R calculates the K nearest neighbors in an intelligent way. That is to say, if R calculates the distances of each test point from every training point and sorts them, this takes the same amount of time regardless of the value of K. To get the K ¡®nearest¡¯ ones is then simply indexing the K first values of these sorted neighbors. 
+
+```{r,cf5}
+print(CM.5)
+```
+According to the confusion table, the accuracy rate is 66.6% . Compared with the result we got from the KNN-10 Model, the KNN-5 Model seems to have a higher accuracy rate. And the next step we will take in the future is to try other grouping parameter from 1 - 50 to see which one will give us the best accuracy rate.
+
+
+##5. The Result
+
+###5.1 Conclusion
+```{r,conclusiontab,include = FALSE}
+name <- c("Random.Forest","MLR","ROC","KNN_10","KNN_5")
+accuracy <- c(64.35,50.50,52.89,63.84,66.56)
+res <- cbind(name,accuracy)
+res <- data.frame(res)
+res.tab = ggplot(data = res) + 
+                      geom_bar(color = 'white', stat = 'identity', 
+                      mapping = aes(x = name, y = accuracy, fill = name)) +
+                      labs(title = 'Final Report Table') +
+                      theme(axis.text.x = element_text(size = 10), legend.position = "right") +
+                      theme(panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+                            panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "white"), 
+                            panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "white") 
+                           
+                      )
+```
+
+```{r,final.res}
+print(res.tab)
+data.table(res)
+```
+After testing the model with 5 methods, we got the accuracy rate table above. According to the result, KNN method with group of 5 gives us the highest prediction accuracy, the following methods are Random Forest and KNN - 10. Given that our respondent variable is a binary categorical variable which is divided to high purchase customer and low purchase customer, our prediction accuracy rates are just a little better than a random guess of 50% accuracy rate. In this case, our model still got a lot of room to improve. Before that, we would like to discuss about the limitation of our model and uncertainties.
+	
+###5.2 Assumptions
+The dataset contains low biases, since the collection of dataset is simple that we can get directly from the purchase record and variables are decided and constant information of individuals. The data collection is just each customer¡¯s purchase record that does not need any surveys, thus the data is confirmed and not biased with analytics. Furthermore, the variables are all about individual¡¯s basic information that is clear and easy to interpret, therefore, our dataset will not be incorrectly linked to ambigus interpretation.  Last, the variables do not contain any directive property. For example, the variable of city only sort people into different groups with region but not mean people from different area have different buying power. In the end, our dataset avoids biases in the procedure of data collecting and remove many biase information with each variable. 
+
+
+Dataset balance is another critical element of the examination. There¡¯s some variables are not quite balanced in the dataset. The most remarkable imbalance in the dataset is that  male customers have a higher preference with the products in the store and tenagers group have the highest purchase amount in the age group. This imbalance might caused by the identity of the products sold in this store are most attractive to young males. However, these unbalanced distribution have significant impact on the result. Thus we keep the original composition of the dataset to run the model. Furthermore, we divided our dependant variable into two categories. The prediction will have a low effect with the imbalance. 
+
+
+The dependent variable Purchase is numeric thus is difficult to do the prediction. Furthermore, with the aggregating of Purchase amount, the range of Purchase is significantly large that cannot give a clear and direct understanding in the prediction result.  In order to do the classification with various models, we divided the dataset into two categories that are high Purchase and low Purchase by the median of Purchase amount. We only distinguish people that will spend a high amount of money or not to simply the classification and avoid the imbalance of the dataset. 
+
+
+###5.3 Limitations and Uncertainty
+However, our project also got a lot limitations and uncertainties that we need to consider about. 
+
+The first limitation is the accuracy of the data set. As we can see from the EDA part, the single purchase amount and the aggregated single purchase amount are quite unreasonable: On average, every person spent 8000 units of unknown currency for every single purchase. Maybe the data collector just used a scaling transformation to the data for the confidential reason. However, we still need to be careful about the unit of the currency and uncertain to the validation of the data set. 
+
+
+The second limitation is the imbalanced data set record. According to the records of our data, for example, we got about 2.5 times the male customers than the female customers. It¡¯s quite counterintuitive and we want to figure out whether it¡¯s actually what happened during the Black Friday season or there was a bias in the data collecting process. 
+
+
+In addition, the raw data had about half million of records. However, after aggregating the data by user_id, we only left around 6000 records which might be the reason to the lack of accuracy of our prediction model as we only care about a single customer¡¯s behavior during the whole Black Friday season rather than a single purchase. Actually we had already tried to train our model with the respondent variables of every single purchase and the Mean Square Error left is very small. In the future, we will try to study the single purchase model and develop a model to predict a single purchase given a customer¡¯s occupation, gender and other information.
+	
+###5.4 Future Investigations
+	For future operations, we still focus on building a more accurate prediction model about the customer's behavior during the Black Friday. And we had already derived several possible approaches to improve the performance of our models:
+
+First, we can focus on the distributions of our data. Whether there is an imbalance condition happens in our data set? And we could also research on each variables to see if we need to take a log transformation on some of them or we need to take an exponential to the variables to make them more predictable. One way is to draw the box plots for every variables and see if they follow a  normal distribution. After making some processing steps to the variables, the correlation between the data set and our predict variables must be higher than before.
+
+
+Second, we also need to consider about the effect of interaction during the predicting process. And one of the way is to add a correlation matrix of the variables and draw the interaction plots of the variables with high correlations. After putting the collinearity of the variables to our consideration, we might improve our model to a higher prediction accuracy rate (especially for the logistic regression model according to our previous experience).
+The third way is to give a try on other methods. In the future, we would try to use other machine learning methods such as lasso and ridge regression model to the data set and SVM is also a very good choice to consider.
+
+
+In addition, as we mentioned the problem of imbalanced data above, we got a few methods to undermine the effect of imbalanced data. The first approach is to undersample the data. This means we end up with balanced classes when training our model. However, we are using less data, consequently, we will have less information about the negative class. The second method is oversampling. Similar to cutting the class with larger sample size, we take more sample from the class with lower sample size with replacement to have the data balanced. This will leave us roughly balanced data which will increase our model¡¯s performance. And the last way is to make a combination of the previous two methods. We both under sample the larger class and oversample the smaller class including smote and rose.
+
+
+## 6.References:
+1. https://stackoverflow.com/questions/2547402/is-there-a-built-in-function-for-finding-the-mode
+Title: Is there a built in function for finding the Mode?
+2. https://towardsdatascience.com/machine-learning-basics-with-the-k-nearest-neighbors-algorithm-6a6e71d01761
+Title: Machine Learning Basics with the K-Nearest Neighbors Algorithm
+Author: Onel Harrison
+Classification Tree
+3. https://ocw.mit.edu/courses/sloan-school-of-management/15-062-data-mining-spring-2003/lecture-notes/L3ClassTrees
+Title: Classification and Regression Tree
+Author:Prof. Nitin Patel  
+4. SOA_ E-learning Predictive Analysis - Chapter 7, Random Forest, ROC curve.
+5. https://www.kaggle.com/dabate/black-friday-examined-eda-apriori 
+Title: Black Friday Examined
+
+

@@ -1,0 +1,3 @@
+missingness.rate.titanic <- titanic[, lapply(X = .SD, FUN = "mean.missing")]
+datatable(data = missingness.rate.titanic[, lapply(X = .SD, 
+    FUN = "round.numerics", digits = 2)], rownames = FALSE)

@@ -1,0 +1,179 @@
+---
+title: "Final Project Group U"
+author: "Qiao Han/Shpakova Anastasiya/Shuangmu Feng/Yucheng Zhang"
+date: "2019/4/24"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, comment="", warning = FALSE, message = FALSE, tidy.opts=list(width.cutoff=55), tidy = TRUE)
+```
+
+```{r libraries}
+library(prettydoc)
+library(data.table)
+library(DT)
+
+library(ggplot2)
+#library(tidyverse)
+library(scales)
+library(arules)
+library(gridExtra)
+```
+
+
+```{r constants}
+data.file <- "BlackFriday.csv"
+```
+
+```{r functions}
+round.numerics <- function(x, digits){
+  if(is.numeric(x)){
+    x <- round(x = x, digits = digits)
+  }
+  return(x)
+}
+```
+
+
+```{r read_data, echo = FALSE}
+dat <- fread(input = data.file, verbose = FALSE)
+names(dat)
+
+user.name <- "User_ID"
+prod.id.name <- "Product_ID"
+gender.name <- "Gender"
+age.name <- "Age"
+occ.name <- "Occupation"
+city.cat.name <- "City_Category"
+stay.name <- "Stay_In_Current_City_Years"
+married.name <- "Marital_Status"
+prod.1.name <- "Product_Category_1"
+prod.2.name <- "Product_Category_2"
+prod.3.name <- "Product_Category_3"
+purchase.name <- "Purchase"
+
+
+
+#Top 10 popular products
+subdat <-dat[,.(Number=.N),by=prod.id.name]
+sortsub <-setorderv(x=subdat,cols="Number",order = -1)[1:10]
+
+dat1 <- dat[get(prod.id.name)%in%sortsub$Product_ID] #sub dataset with only top10 pupular products
+
+```
+
+
+```{r EDA_age}
+age.eda <- dat[,.N,by= age.name]
+age_vis = ggplot(data = age.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = Age, y = N, fill = Age)) +
+                      labs(title = 'Age of Customers') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="right")
+print(age_vis)
+```
+
+```{r EDA_gender}
+gender.eda <- dat[,.N,by= gender.name]
+gender_vis = ggplot(data = gender.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = Gender, y = N, fill = Gender)) +
+                      labs(title = 'Gender of Customers') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="right")
+print(gender_vis)
+```
+
+
+```{r EDA_top10 products purchase & gender}
+subdat <-dat[,.(Number=.N),by=prod.id.name]
+sortsub <-setorderv(x=subdat,cols="Number",order = -1)[1:10]
+dat1 <- dat[get(prod.id.name)%in%sortsub$Product_ID] #sub dataset with only top10 pupular products
+
+
+popprod.pur.gender <- dat1[,.(`Popular products purchase`=sum(Purchase)),by=c(prod.id.name,gender.name)]
+
+popprod.pur.gender.eda <- setorderv(x=popprod.pur.gender,cols=c(prod.id.name,"Popular products purchase"),order = 1)
+
+popprod.pur.gender.eda_vis = ggplot(data = popprod.pur.gender.eda) + 
+                      geom_bar(position="dodge",color = 'white', stat = 'identity', mapping = aes(x = Product_ID, y =`Popular products purchase`, fill = Gender)) +
+                      labs(title = 'Top 10 popular products purchase amount & gender') +
+                      theme(axis.text.x = element_text(size = 5)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="right")
+print(popprod.pur.gender.eda_vis)
+```
+
+
+
+
+
+```{r EDA_top10 products purchase & city}
+popprod.pur.city <- dat1[,.(`Popular products purchase`=sum(Purchase)),by=c(prod.id.name,city.cat.name)]
+
+popprod.pur.city.eda <- setorderv(x=popprod.pur.city,cols=c(prod.id.name,"Popular products purchase"),order = 1)
+
+popprod.pur.city.eda_vis = ggplot(data = popprod.pur.city.eda) + 
+                      geom_bar(position="dodge",color = 'white', stat = 'identity', mapping = aes(x = Product_ID, y =`Popular products purchase`, fill = City_Category)) +
+                      labs(title = 'Top 10 popular products purchase amount & city') +
+                      theme(axis.text.x = element_text(size = 7)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="right")
+print(popprod.pur.city.eda_vis)
+```
+
+
+```{r EDA_top10 products purchase & age}
+popprod.pur.age <- dat1[,.(`Popular products purchase`=sum(Purchase)),by=c(prod.id.name,age.name)]
+
+popprod.pur.age.eda <- setorderv(x=popprod.pur.age,cols=c(prod.id.name,"Popular products purchase"),order = 1)
+
+popprod.pur.age.eda_vis = ggplot(data = popprod.pur.age.eda) + 
+                      geom_bar(position="dodge", color = 'grey', stat = 'identity', mapping = aes(x = Product_ID, y =`Popular products purchase`, fill = Age)) +
+                      labs(title = 'Top 10 popular products purchase amount & age') +
+                      theme(axis.text.x = element_text(size = 7)) +
+                      scale_fill_brewer(palette = 'Set3') +
+                      theme(legend.position="right")
+print(popprod.pur.age.eda_vis)
+```
+
+
+```{r EDA_city & gender}
+city.gender <- dat[,.(`purchase`=sum(Purchase)),by=c(city.cat.name,gender.name)]
+
+city.gender.eda <- setorderv(x=city.gender,cols=c(city.cat.name,"purchase"),order = 1)
+
+city.gender.eda_vis = ggplot(data = city.gender.eda) + 
+                      geom_bar(position="dodge", color = 'white', stat = 'identity', mapping = aes(x = City_Category, y =`purchase`, fill = Gender)) +
+                      labs(title = "Women and men's purchase in different cities") +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="right")
+print(city.gender.eda_vis)
+
+```
+
+
+```{r EDA_city & age}
+city.age <- dat[,.(`purchase`=sum(Purchase)),by=c(city.cat.name,age.name)]
+
+city.age.eda <- setorderv(x=city.age,cols=c(city.cat.name,age.name),order = 1)
+
+city.age.eda_vis = ggplot(data = city.age.eda) + 
+                      geom_bar(position="dodge", color = 'white', stat = 'identity', mapping = aes(x = City_Category, y =`purchase`, fill = Age)) +
+                      labs(title = "Different age group's purchase in different cities") +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="right")
+print(city.age.eda_vis)
+
+```
+
+
+
+
+
+

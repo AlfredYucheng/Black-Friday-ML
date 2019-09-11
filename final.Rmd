@@ -1,0 +1,120 @@
+---
+title: "final"
+author: "Yucheng Zhang yz3546"
+date: "2019.4.24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(DT)
+dat = fread("BlackFriday.csv")
+dim(dat)
+summary(dat)
+```
+
+```{r}
+
+user.name <- "User_ID"
+prod.id.name <- "Product_ID"
+gender.name <- "Gender"
+age.name <- "Age"
+occ.name <- "Occupation"
+city.cat.name <- "City_Category"
+stay.name <- "Stay_In_Current_City_Years"
+married.name <- "Marital_Status"
+prod.1.name <- "Product_Category_1"
+prod.2.name <- "Product_Category_2"
+prod.3.name <- "Product_Category_3"
+purchase.name <- "Purchase"
+
+```
+
+```{r}
+round.numerics <- function(x, digits){
+  if(is.numeric(x)){
+    x <- round(x = x, digits = digits)
+  }
+}
+```
+
+```{r}
+mean.missing <- function(x) {
+    return(mean(is.na(x)))
+}
+missingness.rate.dat <-dat[, lapply(X = .SD, FUN = "mean.missing")]
+datatable(data = missingness.rate.dat[, lapply(X = .SD, 
+    FUN = "round.numerics", digits = 2)], rownames = FALSE)
+
+
+
+dat[,.(.N),by = 'Product_Category_2']
+dat[,.(.N),by = 'Product_Category_3']
+dat[,.(.N),by = 'Product_Category_1']
+```
+
+```{r}
+library(ggplot2)
+#gender
+gender.eda <- dat[,.N,by= gender.name]
+gender_vis = ggplot(data = gender.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = Gender, y = N, fill = Gender)) +
+                      labs(title = 'Gender of Customers') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="none")
+print(gender_vis)
+
+
+```
+
+
+```{r}
+library(ggplot2)
+#gender
+mar.eda <- dat[,.N,by= married.name]
+mar_vis = ggplot(data = mar.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = Marital_Status, y = N, fill = Marital_Status)) +
+                      labs(title = 'Gender of Customers') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      
+                      theme(legend.position="none")
+print(mar_vis)
+
+
+
+```
+
+```{r}
+age.purchase.eda= dat[,.(N = sum(Purchase)),by = age.name]
+
+
+
+age_purchase_vis = ggplot(data = age.purchase.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = Age, y = N, fill = Age)) +
+                      labs(title = 'Purchase and Age of Customers') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="none")
+print(age_purchase_vis)
+
+```
+
+
+```{r}
+city.purchase.eda= dat[,.(N = sum(Purchase)),by = city.cat.name]
+
+
+
+city_purchase_vis = ggplot(data = city.purchase.eda) + 
+                      geom_bar(color = 'white', stat = 'identity', mapping = aes(x = City_Category, y = N, fill = City_Category)) +
+                      labs(title = 'Purchase and City of Customers') +
+                      theme(axis.text.x = element_text(size = 10)) +
+                      scale_fill_brewer(palette = 'Orrd') +
+                      theme(legend.position="none")
+print(city_purchase_vis)
+
+
+
+```
+
